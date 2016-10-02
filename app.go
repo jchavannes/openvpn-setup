@@ -7,6 +7,10 @@ import (
 	"bufio"
 	"flag"
 	"log"
+	"encoding/json"
+	"io/ioutil"
+	"reflect"
+	"strings"
 )
 
 type OpenVPNConfig struct {
@@ -16,6 +20,7 @@ type OpenVPNConfig struct {
 	KEY_ORG      string
 	KEY_EMAIL    string
 	KEY_OU       string
+	KEY_CN       string
 }
 
 func main() {
@@ -26,17 +31,6 @@ func main() {
 	}
 	switch args[0] {
 	case "setup-server":
-		f1 := flag.NewFlagSet("f1", flag.ContinueOnError)
-		var configFilename string
-		f1.StringVar(&configFilename, "c", "", "Config file name.")
-		f1.Parse(args[1:])
-
-		if len(configFilename) == 0 {
-			log.Fatal("Must specify config filename (-c).")
-		}
-
-
-
 		println("Setting up server...")
 		if isOpenVPNInstalled() {
 			println("OpenVPN installed.")
@@ -55,17 +49,65 @@ func main() {
 			}
 			println("Setting up easy-rsa...")
 			setupEasyRSA()
+		}
+		setupCustomVars()
+		if isPKIInitialized() {
+			println("PKI initialized.")
+		} else {
 			println("Initializing PKI...")
 			initializePKI()
 		}
 	case "status":
 		status()
+	case "client":
+		if len(args) < 3 {
+			log.Fatal("Must specify client name (-n).")
+		}
+
+		f1 := flag.NewFlagSet("f1", flag.ContinueOnError)
+
+		var name string
+		f1.StringVar(&name, "n", "", "Client name.")
+		f1.Parse(args[1:])
+
+		if len(name) == 0 {
+			log.Fatal("Must specify client name (-n).")
+		}
+
+		print("Creating client...")
+		createClient(name)
 	case "test":
 		println("test...")
 	default:
 		print("Unknown command.\n\n")
 		outputHelp()
 	}
+}
+
+func getServerConfig() *OpenVPNConfig {
+	args := os.Args[1:]
+	if len(args) < 3 {
+		log.Fatal("Must specify config filename (-c).")
+	}
+
+	f1 := flag.NewFlagSet("f1", flag.ContinueOnError)
+
+	var configFilename string
+	f1.StringVar(&configFilename, "c", "", "Config file name.")
+	f1.Parse(args[1:])
+
+	if len(configFilename) == 0 {
+		log.Fatal("Must specify config filename (-c).")
+	}
+
+	file, err := ioutil.ReadFile(configFilename)
+	check(err)
+
+	var openVPNConfig OpenVPNConfig
+	err = json.Unmarshal(file, &openVPNConfig)
+	check(err)
+
+	return &openVPNConfig
 }
 
 func installOpenVPN() {
@@ -112,15 +154,63 @@ func installEasyRSA() {
 	streamCommand("sudo", "apt-get", "install", "-y", "easy-rsa")
 }
 
+func isPKIInitialized() bool {
+	err := exec.Command("test", "-d", "/etc/openvpn/easy-rsa/keys").Run()
+	return err == nil
+}
+
 func initializePKI() {
 	exec.Command("ln", "-s", "/etc/openvpn/easy-rsa/openssl-1.0.0.cnf", "/etc/openvpn/easy-rsa/openssl.conf")
-	streamCommand("bash", "-c", "cd /etc/openvpn/easy-rsa && source ./vars && ./clean-all")
-	streamCommand("bash", "-c", "cd /etc/openvpn/easy-rsa && source ./vars && ./build-ca --batch")
+
+	steps := []string{
+		"cd /etc/openvpn/easy-rsa",
+		"source ./vars > /dev/null",
+		"source ./vars-custom",
+		"./clean-all",
+		"./build-ca --batch",
+		"./build-key-server --batch server",
+		"./build-dh",
+	}
+	streamCommand("bash", "-c", strings.Join(steps, " && "))
+}
+
+func setupCustomVars() {
+	openVPNConfig := getServerConfig()
+	value := reflect.ValueOf(*openVPNConfig)
+
+	var exports []string
+	for i := 0; i < value.NumField(); i++ {
+		field := value.Field(i)
+
+		if field.Type().Kind() != reflect.String {
+			continue
+		}
+
+		str := field.String()
+		exports = append(exports, "export " + value.Type().Field(i).Name + "=\"" + str + "\"")
+	}
+
+	ioutil.WriteFile("/etc/openvpn/easy-rsa/vars-custom", []byte(strings.Join(exports, "\n")), 0644)
+}
+
+func createClient(name string) {
+	if !isPKIInitialized() {
+		log.Fatal("PKI not initialized, run setup-server first")
+	}
+
+	steps := []string{
+		"cd /etc/openvpn/easy-rsa",
+		"source ./vars > /dev/null",
+		"source ./vars-custom",
+		"./build-key  --batch " + name,
+	}
+	streamCommand("bash", "-c", strings.Join(steps, " && "))
 }
 
 func outputHelp() {
 	print(
 		"Available commands:\n",
+		" - client\n",
 		" - setup-server\n",
 		" - status\n",
 	)
@@ -164,5 +254,11 @@ func streamCommand(cmdName string, cmdArgs ...string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error waiting for Cmd", err)
 		os.Exit(1)
+	}
+}
+
+func check(err error) {
+	if err != nil {
+		log.Fatal(err)
 	}
 }
