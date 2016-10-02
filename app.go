@@ -162,11 +162,14 @@ func installEasyRSA() {
 }
 
 func isPKIInitialized() bool {
-	err := exec.Command("test", "-d", "/etc/openvpn/easy-rsa/keys").Run()
+	err := exec.Command("test", "-f", "/etc/openvpn/easy-rsa/keys/server.crt").Run()
 	return err == nil
 }
 
 func initializePKI() {
+	err := exec.Command("sed", "-i", "s/^\\(subjectAltName=\\)/# \\1/g", "/etc/openvpn/easy-rsa/openssl-1.0.0.cnf").Run()
+	check(err)
+
 	exec.Command("ln", "-s", "/etc/openvpn/easy-rsa/openssl-1.0.0.cnf", "/etc/openvpn/easy-rsa/openssl.conf")
 
 	steps := []string{
@@ -188,12 +191,12 @@ func setupCustomVars() {
 	var exports []string
 	for i := 0; i < value.NumField(); i++ {
 		field := value.Field(i)
+		str := field.String()
 
-		if field.Type().Kind() != reflect.String {
+		if field.Type().Kind() != reflect.String || len(str) == 0 {
 			continue
 		}
 
-		str := field.String()
 		exports = append(exports, "export " + value.Type().Field(i).Name + "=\"" + str + "\"")
 	}
 
