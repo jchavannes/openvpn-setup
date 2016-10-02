@@ -21,6 +21,7 @@ type OpenVPNConfig struct {
 	KEY_EMAIL    string
 	KEY_OU       string
 	KEY_CN       string
+	KEY_ALTNAMES string
 }
 
 func main() {
@@ -33,13 +34,13 @@ func main() {
 	case "setup-server":
 		println("Setting up server...")
 		if isOpenVPNInstalled() {
-			println("OpenVPN installed.")
+			println("OpenVPN already installed.")
 		} else {
 			println("Installing OpenVPN...")
 			installOpenVPN()
 		}
 		if isEasyRSASetup() {
-			println("easy-rsa setup.")
+			println("easy-rsa already setup.")
 		} else {
 			if isEasyRSAInstalled() {
 				println("easy-rsa already installed.")
@@ -52,10 +53,16 @@ func main() {
 		}
 		setupCustomVars()
 		if isPKIInitialized() {
-			println("PKI initialized.")
+			println("PKI already initialized.")
 		} else {
 			println("Initializing PKI...")
 			initializePKI()
+		}
+		if areOpenVPNKeysSetup() {
+			println("OpenVPN keys already in right location.")
+		} else {
+			println("Copying keys to right location...")
+			copyKeysToOpenVPNRoot()
 		}
 	case "status":
 		status()
@@ -202,7 +209,24 @@ func createClient(name string) {
 		"cd /etc/openvpn/easy-rsa",
 		"source ./vars > /dev/null",
 		"source ./vars-custom",
-		"./build-key  --batch " + name,
+		"./build-key --batch " + name,
+	}
+	streamCommand("bash", "-c", strings.Join(steps, " && "))
+}
+
+func areOpenVPNKeysSetup() bool {
+	err := exec.Command("test", "-f", "/etc/openvpn/server.key").Run()
+	return err == nil
+}
+
+func copyKeysToOpenVPNRoot() {
+	if !isPKIInitialized() {
+		log.Fatal("PKI not initialized, run setup-server first")
+	}
+
+	steps := []string{
+		"cd /etc/openvpn/easy-rsa/keys",
+		"cp ca.crt ca.key dh2048.pem server.crt server.key /etc/openvpn",
 	}
 	streamCommand("bash", "-c", strings.Join(steps, " && "))
 }
