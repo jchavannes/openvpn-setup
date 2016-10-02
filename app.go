@@ -20,8 +20,6 @@ type OpenVPNConfig struct {
 	KEY_ORG      string
 	KEY_EMAIL    string
 	KEY_OU       string
-	KEY_CN       string
-	KEY_ALTNAMES string
 }
 
 func main() {
@@ -176,6 +174,7 @@ func initializePKI() {
 		"cd /etc/openvpn/easy-rsa",
 		"source ./vars > /dev/null",
 		"source ./vars-custom",
+		"export KEY_CN='server'",
 		"./clean-all",
 		"./build-ca --batch",
 		"./build-key-server --batch server",
@@ -212,6 +211,7 @@ func createClient(name string) {
 		"cd /etc/openvpn/easy-rsa",
 		"source ./vars > /dev/null",
 		"source ./vars-custom",
+		"export KEY_CN='" + name + "'",
 		"./build-key --batch " + name,
 	}
 	streamCommand("bash", "-c", strings.Join(steps, " && "))

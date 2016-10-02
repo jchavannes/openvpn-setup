@@ -4,6 +4,5 @@
   "KEY_CITY": "San Francisco",
   "KEY_ORG": "Example Corp",
   "KEY_EMAIL": "mail@example.com",
-  "KEY_OU": "Example Department",
-  "KEY_CN": "Example Common Name"
+  "KEY_OU": "Example Department"
 }
