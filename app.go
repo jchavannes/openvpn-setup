@@ -94,8 +94,6 @@ func main() {
 			createClient(name)
 		}
 		outputClient(name)
-	case "test":
-		println("test...")
 	default:
 		print("Unknown command.\n\n")
 		outputHelp()
