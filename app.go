@@ -11,6 +11,8 @@ import (
 	"io/ioutil"
 	"reflect"
 	"strings"
+	"math/rand"
+	"strconv"
 )
 
 type OpenVPNConfig struct {
@@ -62,6 +64,12 @@ func main() {
 			println("Copying keys to right location...")
 			copyKeysToOpenVPNRoot()
 		}
+		if isConfiguredAsServer() {
+			println("Already setup as server.")
+		} else {
+			println("Setting up server config...")
+			setupServerConfig()
+		}
 	case "status":
 		status()
 	case "client":
@@ -79,8 +87,13 @@ func main() {
 			log.Fatal("Must specify client name (-n).")
 		}
 
-		print("Creating client...")
-		createClient(name)
+		if doesClientExist(name) {
+			println("Client already exists.")
+		} else {
+			print("Creating client...")
+			createClient(name)
+		}
+		outputClient(name)
 	case "test":
 		println("test...")
 	default:
@@ -202,6 +215,11 @@ func setupCustomVars() {
 	ioutil.WriteFile("/etc/openvpn/easy-rsa/vars-custom", []byte(strings.Join(exports, "\n")), 0644)
 }
 
+func doesClientExist(name string) bool {
+	err := exec.Command("test", "-f", "/etc/openvpn/easy-rsa/keys/" + name + ".crt").Run()
+	return err == nil
+}
+
 func createClient(name string) {
 	if !isPKIInitialized() {
 		log.Fatal("PKI not initialized, run setup-server first")
@@ -215,6 +233,18 @@ func createClient(name string) {
 		"./build-key --batch " + name,
 	}
 	streamCommand("bash", "-c", strings.Join(steps, " && "))
+}
+
+func outputClient(name string) {
+	out := func(filename string) {
+		ca, err := ioutil.ReadFile(filename)
+		check(err)
+		fmt.Printf("%s:\n%s\n", filename, ca)
+	}
+
+	out("/etc/openvpn/ca.crt")
+	out("/etc/openvpn/easy-rsa/keys/" + name + ".key")
+	out("/etc/openvpn/easy-rsa/keys/" + name + ".crt")
 }
 
 func areOpenVPNKeysSetup() bool {
@@ -232,6 +262,15 @@ func copyKeysToOpenVPNRoot() {
 		"cp ca.crt ca.key dh2048.pem server.crt server.key /etc/openvpn",
 	}
 	streamCommand("bash", "-c", strings.Join(steps, " && "))
+}
+
+func setupServerConfig() {
+	err := exec.Command("bash", "-c", "gunzip -c /usr/share/doc/openvpn/examples/sample-config-files/server.conf.gz > /etc/openvpn/server.conf").Run()
+	check(err)
+	err = exec.Command("sed", "-i", "s/dh dh1024\\.pem/dh dh2048.pem/g", "/etc/openvpn/server.conf").Run()
+	check(err)
+	err = exec.Command("sed", "-i", "s/^\\(server 10.\\)8\\(.0.0 255.255.255.0\\)/\\1" + strconv.Itoa(rand.Intn(100)) + "\\2/g", "/etc/openvpn/server.conf").Run()
+	check(err)
 }
 
 func outputHelp() {
