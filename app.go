@@ -39,15 +39,15 @@ func main() {
 			println("Installing OpenVPN...")
 			installOpenVPN()
 		}
+		if isEasyRSAInstalled() {
+			println("easy-rsa already installed.")
+		} else {
+			println("Installing easy-rsa...")
+			installEasyRSA()
+		}
 		if isEasyRSASetup() {
 			println("easy-rsa already setup.")
 		} else {
-			if isEasyRSAInstalled() {
-				println("easy-rsa already installed.")
-			} else {
-				println("Installing easy-rsa...")
-				installEasyRSA()
-			}
 			println("Setting up easy-rsa...")
 			setupEasyRSA()
 		}
